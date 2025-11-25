@@ -1,12 +1,11 @@
 import streamlit as st
 import cv2
-import av
-import time
-import numpy as np
 from gtts import gTTS
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+import numpy as np
+import threading
+import os
 
-st.title("RoboKalam Live Face Detection with Auto Greeting")
+st.title("RoboKalam Live Face Detection")
 
 # -----------------------------
 # 1️⃣ Prepare greeting
@@ -14,55 +13,52 @@ st.title("RoboKalam Live Face Detection with Auto Greeting")
 greeting_text = "Hello friend! Welcome to RoboKalam."
 greeting_file = "greeting.mp3"
 
-# Generate greeting file once
-tts = gTTS(greeting_text, lang="en")
-tts.save(greeting_file)
+# Generate greeting once
+if not os.path.exists(greeting_file):
+    tts = gTTS(greeting_text)
+    tts.save(greeting_file)
+
+# Function to play greeting
+def play_greeting():
+    threading.Thread(target=lambda: os.system(f"mpg123 {greeting_file}")).start()
 
 # -----------------------------
-# 2️⃣ Face detection model
+# 2️⃣ Load face detection cascade
 # -----------------------------
-cascade = cv2.CascadeClassifier(
-    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-)
+cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
-
-# -----------------------------
-# 3️⃣ Video Processing Class
-# -----------------------------
-class FaceDetector(VideoTransformerBase):
-
-    last_greet = 0
-    cooldown = 5   # seconds
-
-    def transform(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        faces = cascade.detectMultiScale(gray, 1.2, 5)
-
-        # Draw rectangles and trigger voice
-        if len(faces) > 0:
-            now = time.time()
-
-            # Play greeting every cooldown seconds
-            if now - FaceDetector.last_greet > FaceDetector.cooldown:
-                st.audio("greeting.mp3", autoplay=True)
-                FaceDetector.last_greet = now
-
-            for (x, y, w, h) in faces:
-                cv2.rectangle(img, (x, y), (x+w, y+h), (0, 255, 0), 3)
-
-        return img
-
+st.info("Click the camera button below to take a photo. Faces will be detected and greeting played automatically.")
 
 # -----------------------------
-# 4️⃣ Start WebRTC Camera
+# 3️⃣ Camera input loop
 # -----------------------------
-webrtc_streamer(
-    key="face-detection",
-    video_transformer_factory=FaceDetector,
-    media_stream_constraints={
-        "video": True,
-        "audio": False
-    },
-)
+last_greeting_time = 0
+cooldown_seconds = 5  # Wait 5 seconds before next greeting
+
+while True:
+    img_file = st.camera_input("Take a photo")
+    if img_file is None:
+        break  # No image yet
+
+    # Convert image to OpenCV format
+    bytes_data = img_file.getvalue()
+    nparr = np.frombuffer(bytes_data, np.uint8)
+    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    # Face detection
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    faces = cascade.detectMultiScale(gray, 1.1, 4)
+
+    # Draw rectangles
+    for (x, y, w, h) in faces:
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+    # Play greeting if face detected and cooldown passed
+    import time
+    current_time = time.time()
+    if len(faces) > 0 and (current_time - last_greeting_time) > cooldown_seconds:
+        play_greeting()
+        last_greeting_time = current_time
+
+    # Display result
+    st.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), caption="Detected Faces")
