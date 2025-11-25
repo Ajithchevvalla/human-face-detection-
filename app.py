@@ -1,36 +1,58 @@
-import streamlit as st
 import cv2
-import numpy as np
-from PIL import Image
+import streamlit as st
+from gtts import gTTS
+import tempfile
 import base64
 
-st.set_page_config(page_title="Live Face Greeting", page_icon="🤖")
 st.title("🤖 RoboKalam Live Face Detection & Greeting")
 
-# Ask user to allow camera
-snapshot = st.camera_input("Allow camera for face detection", key="camera1")
+# Load Haar Cascade for face detection
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
-if snapshot is not None:
-    # Convert snapshot to OpenCV image
-    img = np.array(Image.open(snapshot))
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+# Access webcam
+video_capture = cv2.VideoCapture(0)
 
-    # Load pre-trained face detector
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+# Generate greeting audio (if not already done)
+greeting_text = "Hello friend! Welcome to RoboKalam"
+tts = gTTS(greeting_text)
+temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+tts.save(temp_audio.name)
 
-    if len(faces) > 0:
-        st.success("Hello friend! Welcome to RoboKalam 🤖")
+# Flag to check if audio already played
+audio_played = False
 
-        # Play greeting audio
-        audio_file = "greeting.mp3"  # Place your greeting audio in the same folder
-        audio_bytes = open(audio_file, "rb").read()
-        st.audio(audio_bytes, format="audio/mp3")
+stframe = st.empty()
 
-        for (x, y, w, h) in faces:
-            cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
-    else:
-        st.info("No face detected. Please stay in front of the camera.")
+while True:
+    ret, frame = video_capture.read()
+    if not ret:
+        st.write("Cannot access camera")
+        break
 
-    # Show image with rectangles
-    st.image(img, channels="BGR")
+    # Convert to grayscale
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
+
+    # Draw rectangle around faces
+    for (x, y, w, h) in faces:
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+    # Convert frame to RGB for Streamlit
+    stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), channels="RGB")
+
+    # If face detected and audio not played yet
+    if len(faces) > 0 and not audio_played:
+        audio_played = True  # prevent replaying continuously
+
+        # Read mp3 and encode to base64
+        with open(temp_audio.name, "rb") as f:
+            audio_bytes = f.read()
+        audio_base64 = base64.b64encode(audio_bytes).decode()
+
+        # HTML audio tag with autoplay
+        audio_html = f"""
+        <audio autoplay>
+            <source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3">
+        </audio>
+        """
+        st.components.v1.html(audio_html, height=0, width=0)
