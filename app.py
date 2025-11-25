@@ -2,6 +2,7 @@ import streamlit as st
 import cv2
 import numpy as np
 from PIL import Image
+import base64
 
 st.set_page_config(page_title="Live Face Greeting", page_icon="🤖")
 st.title("🤖 RoboKalam Live Face Detection & Greeting")
@@ -20,6 +21,12 @@ if snapshot is not None:
 
     if len(faces) > 0:
         st.success("Hello friend! Welcome to RoboKalam 🤖")
+
+        # Play greeting audio
+        audio_file = "greeting.mp3"  # Place your greeting audio in the same folder
+        audio_bytes = open(audio_file, "rb").read()
+        st.audio(audio_bytes, format="audio/mp3")
+
         for (x, y, w, h) in faces:
             cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
     else:
