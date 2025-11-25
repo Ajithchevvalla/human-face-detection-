@@ -1,64 +1,44 @@
 import streamlit as st
 import cv2
-from gtts import gTTS
 import numpy as np
-import threading
+from gtts import gTTS
+import tempfile
 import os
+from PIL import Image
 
-st.title("RoboKalam Live Face Detection")
+st.set_page_config(page_title="Live Face Detection", layout="centered")
 
-# -----------------------------
-# 1️⃣ Prepare greeting
-# -----------------------------
-greeting_text = "Hello friend! Welcome to RoboKalam."
-greeting_file = "greeting.mp3"
+st.title("👋 Live Face Detection & Greeting")
 
-# Generate greeting once
-if not os.path.exists(greeting_file):
-    tts = gTTS(greeting_text)
-    tts.save(greeting_file)
+# Ask for camera input
+img_file = st.camera_input("Take a photo", key="camera1")
 
-# Function to play greeting
-def play_greeting():
-    threading.Thread(target=lambda: os.system(f"mpg123 {greeting_file}")).start()
+if img_file is not None:
+    # Convert uploaded image to OpenCV format
+    img = Image.open(img_file)
+    img_array = np.array(img)
+    frame = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
 
-# -----------------------------
-# 2️⃣ Load face detection cascade
-# -----------------------------
-cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-
-st.info("Click the camera button below to take a photo. Faces will be detected and greeting played automatically.")
-
-# -----------------------------
-# 3️⃣ Camera input loop
-# -----------------------------
-last_greeting_time = 0
-cooldown_seconds = 5  # Wait 5 seconds before next greeting
-
-while True:
-    img_file = st.camera_input("Take a photo")
-    if img_file is None:
-        break  # No image yet
-
-    # Convert image to OpenCV format
-    bytes_data = img_file.getvalue()
-    nparr = np.frombuffer(bytes_data, np.uint8)
-    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-    # Face detection
+    # Load OpenCV pre-trained face detector
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = cascade.detectMultiScale(gray, 1.1, 4)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
 
-    # Draw rectangles
+    # Draw rectangle around faces
     for (x, y, w, h) in faces:
         cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-    # Play greeting if face detected and cooldown passed
-    import time
-    current_time = time.time()
-    if len(faces) > 0 and (current_time - last_greeting_time) > cooldown_seconds:
-        play_greeting()
-        last_greeting_time = current_time
+    st.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), caption="Detected Faces", use_column_width=True)
 
-    # Display result
-    st.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), caption="Detected Faces")
+    if len(faces) > 0:
+        greeting_text = "Hello! I see you!"
+        st.success(greeting_text)
+
+        # Convert greeting to speech
+        tts = gTTS(greeting_text)
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        tts.save(temp_file.name)
+        st.audio(temp_file.name, format="audio/mp3")
+        os.unlink(temp_file.name)
+    else:
+        st.info("No face detected. Please try again.")
